@@ -1,5 +1,5 @@
 {
-  "name": "openclaw-plugin-contemplation",
+  "name": "contemplation",
   "version": "0.1.0",
   "description": "Self-directed contemplative inquiry for OpenClaw agents. Multi-pass processing of knowledge gaps over 24 hours with LLM topic tagging.",
   "main": "index.js",
