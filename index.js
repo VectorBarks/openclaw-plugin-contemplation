@@ -89,7 +89,7 @@ function resolveOutputPaths(agentId, workspacePath) {
 }
 
 module.exports = {
-  id: 'contemplation',
+  id: 'openclaw-plugin-contemplation',
   name: 'Contemplation — Inquiry Passes',
 
   register(api) {
