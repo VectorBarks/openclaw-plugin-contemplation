@@ -1,0 +1,55 @@
+{
+  "enabled": true,
+  "_note": "Output paths resolved per-agent at runtime from workspace metadata. Set output.growthVectorsPath/insightsPath to override.",
+  "passes": {
+    "1": {
+      "delayMs": 0,
+      "prompt": "Initial exploration of the inquiry. Clarify what is unknown and why it matters."
+    },
+    "2": {
+      "delayMs": 14400000,
+      "prompt": "Deeper reflection. Connect this inquiry to prior patterns and constraints."
+    },
+    "3": {
+      "delayMs": 72000000,
+      "prompt": "Final synthesis. Produce a concise growth vector with practical implications."
+    }
+  },
+  "extraction": {
+    "entropyThreshold": 0.5,
+    "keywords": [
+      "I'm curious",
+      "unclear",
+      "I need to learn",
+      "warum",
+      "verstehe ich nicht",
+      "neugierig",
+      "ich frage mich",
+      "interessiert mich",
+      "ich wei\u00df nicht warum",
+      "was bedeutet",
+      "don't understand",
+      "ich verstehe nicht",
+      "keine ahnung wie",
+      "wie kommt es",
+      "I wonder",
+      "wie funktioniert"
+    ],
+    "maxGapsPerExchange": 2
+  },
+  "llm": {
+    "endpoint": "http://localhost:8080/v1/chat/completions",
+    "model": "/Users/saphira/mlx-models/GLM-4.7-Flash-MLX-4bit",
+    "temperature": 0.6,
+    "maxTokens": 2000,
+    "timeoutMs": 45000,
+    "max_tokens": 2000
+  },
+  "nightshift": {
+    "priority": 50
+  },
+  "tagging": {
+    "enabled": true
+  },
+  "output": {}
+}
