@@ -238,6 +238,34 @@ module.exports = {
     }
 
     // -----------------------------------------------------------------
+    // STARTUP: Re-queue due inquiries after gateway restart
+    // -----------------------------------------------------------------
+    // On plugin load, check for any in-progress inquiries with due passes
+    // and queue them to nightshift so they get processed.
+    function queueDueInquiriesOnStartup(agentId) {
+      const state = getState(agentId);
+      const inquiries = state.store.list();
+      const due = inquiries.filter(i => 
+        i.status === 'in_progress' && 
+        i.passes.some(p => !p.completed && p.scheduled && new Date(p.scheduled) <= new Date())
+      );
+      
+      if (due.length > 0 && global.__ocNightshift?.queueTask) {
+        api.logger.info(`[Contemplation:${agentId}] Re-queuing ${due.length} due inquiries on startup`);
+        for (const inquiry of due) {
+          global.__ocNightshift.queueTask(agentId, {
+            type: 'contemplation',
+            priority: config.nightshift?.priority || 50,
+            source: 'contemplation-restart'
+          });
+        }
+      }
+    }
+
+    // Queue for saphira agent on startup (main interactive agent)
+    setTimeout(() => queueDueInquiriesOnStartup('saphira'), 5000);
+
+    // -----------------------------------------------------------------
     // HOOK: before_agent_start — Surface active/completed contemplations
     // -----------------------------------------------------------------
     // Inject contemplation state so the agent knows what it's been
