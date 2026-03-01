@@ -12,8 +12,10 @@
     "maxGapsPerExchange": 2
   },
   "llm": {
-    "endpoint": "http://localhost:11434/api/generate",
+    "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
     "model": "deepseek-v3.1:671b-cloud",
+    "apiKey": null,
+    "format": null,
     "temperature": 0.6,
     "maxTokens": 700,
     "timeoutMs": 45000

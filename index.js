@@ -47,13 +47,15 @@ async function tagInquiry(store, inquiry, config, logger) {
   ].join('\n');
 
   try {
-    const result = await reflect.callOllama({
-      endpoint: config.llm?.endpoint || 'http://localhost:11434/api/generate',
+    const result = await reflect.callLLM({
+      endpoint: config.llm?.endpoint || 'http://127.0.0.1:11434/v1/chat/completions',
       model: config.llm?.model,
       prompt,
       temperature: 0.3,
       maxTokens: 100,
-      timeoutMs: config.llm?.timeoutMs ?? 15000
+      timeoutMs: config.llm?.timeoutMs ?? 15000,
+      apiKey: config.llm?.apiKey || null,
+      format: config.llm?.format || null
     });
 
     // Parse tags from LLM response — handle various formats
