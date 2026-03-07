@@ -385,6 +385,28 @@ module.exports = {
       });
     });
 
+    api.registerGatewayMethod('contemplation.requeue', async ({ params, respond }) => {
+      const agentId = params?.agentId || 'saphira';
+      const state = getState(agentId);
+      const due = state.store.getDuePass();
+      if (!due) {
+        respond(true, { status: 'no_due_passes', agentId });
+        return;
+      }
+      // Reset processing flag in case it's stuck
+      state.processing = false;
+      if (global.__ocNightshift?.queueTask) {
+        global.__ocNightshift.queueTask(agentId, {
+          type: 'contemplation',
+          priority: config.nightshift?.priority || 50,
+          source: 'contemplation-manual-requeue'
+        });
+        respond(true, { status: 'requeued', agentId, inquiryId: due.inquiry.id, passNumber: due.passNumber });
+      } else {
+        respond(false, { error: 'nightshift not available' });
+      }
+    });
+
     api.logger.info('Contemplation plugin registered — metabolism integration active (passes via nightshift only)');
   }
 };
