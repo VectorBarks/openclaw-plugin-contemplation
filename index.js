@@ -160,9 +160,11 @@ module.exports = {
       return wrote;
     }
 
-    async function runOneDuePass(state, ctx) {
+    async function runOneDuePass(state, ctx, task) {
       if (state.processing) return false;
-      const due = state.store.getDuePass();
+      // Check if this is a forced run (manual trigger via /nightshift-run)
+      const forceRun = task?.source === 'manual';
+      const due = state.store.getDuePass(Date.now(), forceRun);
       if (!due) return false;
 
       state.processing = true;
@@ -234,7 +236,7 @@ module.exports = {
     if (global.__ocNightshift?.registerTaskRunner) {
       global.__ocNightshift.registerTaskRunner('contemplation', async (task, ctx) => {
         const state = getState(ctx.agentId);
-        await runOneDuePass(state, ctx);
+        await runOneDuePass(state, ctx, task);
       });
       api.logger.info('[Contemplation] Registered nightshift task runner for "contemplation"');
     }
@@ -387,8 +389,9 @@ module.exports = {
 
     api.registerGatewayMethod('contemplation.requeue', async ({ params, respond }) => {
       const agentId = params?.agentId || 'saphira';
+      const forceRun = params?.forceRun || false;
       const state = getState(agentId);
-      const due = state.store.getDuePass();
+      const due = state.store.getDuePass(Date.now(), forceRun);
       if (!due) {
         respond(true, { status: 'no_due_passes', agentId });
         return;
@@ -399,7 +402,7 @@ module.exports = {
         global.__ocNightshift.queueTask(agentId, {
           type: 'contemplation',
           priority: config.nightshift?.priority || 50,
-          source: 'contemplation-manual-requeue'
+          source: forceRun ? 'manual' : 'contemplation-manual-requeue'
         });
         respond(true, { status: 'requeued', agentId, inquiryId: due.inquiry.id, passNumber: due.passNumber });
       } else {
