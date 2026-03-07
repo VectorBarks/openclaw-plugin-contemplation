@@ -120,6 +120,10 @@ module.exports = {
       return states.get(id);
     }
 
+    // Expose getState globally for cross-plugin access (e.g., nightshift)
+    global.__ocContemplation = global.__ocContemplation || {};
+    global.__ocContemplation.getState = getState;
+
     /**
      * Get output paths for an agent, resolving workspace from state or event.
      */
