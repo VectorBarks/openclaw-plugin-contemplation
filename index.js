@@ -259,14 +259,13 @@ module.exports = {
       );
       
       if (due.length > 0 && global.__ocNightshift?.queueTask) {
-        api.logger.info(`[Contemplation:${agentId}] Re-queuing ${due.length} due inquiries on startup`);
-        for (const inquiry of due) {
-          global.__ocNightshift.queueTask(agentId, {
-            type: 'contemplation',
-            priority: config.nightshift?.priority || 50,
-            source: 'contemplation-restart'
-          });
-        }
+        api.logger.info(`[Contemplation:${agentId}] Found ${due.length} due inquiries on startup — queueing 1 to avoid flood`);
+        // Only queue 1 on startup to avoid gateway overload. Nightshift will pick up the rest naturally.
+        global.__ocNightshift.queueTask(agentId, {
+          type: 'contemplation',
+          priority: config.nightshift?.priority || 50,
+          source: 'contemplation-restart'
+        });
       }
     }
 
