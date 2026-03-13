@@ -5,6 +5,7 @@ const InquiryStore = require('./lib/inquiry');
 const extractor = require('./lib/extractor');
 const reflect = require('./lib/reflect');
 const writer = require('./lib/writer');
+const filter = require('./lib/filter');
 
 function deepMerge(target, source) {
   const result = { ...target };
@@ -113,7 +114,7 @@ module.exports = {
       if (!states.has(id)) {
         states.set(id, {
           agentId: id,
-          store: new InquiryStore(baseDataDir, id, config.passes),
+          store: new InquiryStore(baseDataDir, id, config.passes, config.priority),
           processing: false,
           workspacePath: null // set on first event with metadata
         });
@@ -219,9 +220,18 @@ module.exports = {
     // the LLM has already reasoned about the exchange.
 
     if (global.__ocMetabolism?.gapListeners) {
-      global.__ocMetabolism.gapListeners.push((gaps, agentId) => {
+      global.__ocMetabolism.gapListeners.push(async (gaps, agentId) => {
         const state = getState(agentId);
         for (const gap of gaps) {
+          // Filter check before adding to queue
+          const filterResult = await filter.shouldBlock(gap.question, config, reflect.callLLM);
+          if (filterResult.blocked) {
+            api.logger.info(
+              `[Contemplation:${agentId}] Blocked metabolism inquiry: "${gap.question.substring(0, 60)}" (${filterResult.category})`
+            );
+            continue;
+          }
+
           const inquiry = state.store.addInquiry({
             question: gap.question,
             source: `metabolism:${gap.sourceId || 'unknown'}`,
@@ -326,6 +336,15 @@ module.exports = {
       if (gaps.length === 0) return;
 
       for (const gap of gaps) {
+        // Filter check before adding to queue
+        const filterResult = await filter.shouldBlock(gap.question, config, reflect.callLLM);
+        if (filterResult.blocked) {
+          api.logger.info(
+            `[Contemplation:${state.agentId}] Blocked conversation inquiry: "${gap.question.substring(0, 60)}" (${filterResult.category})`
+          );
+          continue;
+        }
+
         const inquiry = state.store.addInquiry(gap);
         api.logger.info(`[Contemplation:${state.agentId}] Queued inquiry ${inquiry.id} (from conversation)`);
         // Tag asynchronously — don't block the hook
@@ -390,6 +409,47 @@ module.exports = {
           }))
         }))
       });
+    });
+
+    api.registerGatewayMethod('contemplation.addInquiry', async ({ params, respond }) => {
+      const agentId = params?.agentId || 'saphira';
+      const question = params?.question;
+      if (!question) {
+        respond(false, { error: 'question is required' });
+        return;
+      }
+
+      const state = getState(agentId);
+
+      // Run filter check
+      const filterResult = await filter.shouldBlock(question, config, reflect.callLLM);
+      if (filterResult.blocked) {
+        respond(false, { error: 'blocked_by_filter', category: filterResult.category, reason: filterResult.reason });
+        return;
+      }
+
+      const inquiry = state.store.addInquiry({
+        question,
+        source: params?.source || 'manual',
+        entropy: params?.entropy || 0,
+        context: params?.context || question,
+        priority: params?.priority,
+        tags: params?.tags || ['manual']
+      });
+
+      // Tag asynchronously
+      tagInquiry(state.store, inquiry, config, api.logger).catch(() => {});
+
+      // Queue for nightshift
+      if (global.__ocNightshift?.queueTask) {
+        global.__ocNightshift.queueTask(agentId, {
+          type: 'contemplation',
+          priority: config.nightshift?.priority || 50,
+          source: 'manual'
+        });
+      }
+
+      respond(true, { status: 'queued', inquiryId: inquiry.id, priority: inquiry.priority });
     });
 
     api.registerGatewayMethod('contemplation.requeue', async ({ params, respond }) => {

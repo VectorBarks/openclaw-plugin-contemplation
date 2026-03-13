@@ -222,6 +222,85 @@ They work independently but integrate through shared conventions: global event b
 
 See [openclaw-metacognitive-suite](https://github.com/CoderofTheWest/openclaw-metacognitive-suite) for the full picture.
 
+## Hybrid Classifier Filter
+
+New inquiries pass through a configurable filter before entering the queue. The filter prevents noise (tool names, person names, graph artifacts, address forms) from consuming contemplation resources.
+
+### How It Works
+
+1. **Stage 1 — Regex/Heuristics (fast):** Pattern matching for obvious tool names, single-word person names, address forms, self-references, and graph topology artifacts. Returns a confidence score.
+2. **Stage 2 — LLM Fallback:** If Stage 1 confidence is below `llmFallbackThreshold`, an LLM classifies the question as genuine or noise.
+3. **Logging:** Blocked inquiries are appended to a JSONL log file for review and calibration.
+
+### Filter Configuration
+
+| Setting | Default | What It Does |
+|---|---|---|
+| `filter.enabled` | `true` | Enable/disable the filter |
+| `filter.classifierMode` | `"hybrid"` | Classification mode (hybrid = regex + LLM) |
+| `filter.blockCategories` | `["person_name", ...]` | Categories to block (see below) |
+| `filter.llmFallbackThreshold` | `0.5` | Confidence threshold below which LLM fallback triggers |
+| `filter.logBlocked` | `true` | Log blocked inquiries to JSONL |
+| `filter.blockedLogPath` | `"blocked-inquiries.jsonl"` | Path for blocked inquiry log (relative to plugin dir) |
+
+**Block Categories:** `person_name`, `nickname_or_address_form`, `tool_or_app_name`, `agent_self_reference`, `graph_frequency_artifact`
+
+## Priority Queue System
+
+Inquiries now carry a priority field that determines processing order. Higher priority inquiries are processed first by the nightshift scheduler.
+
+### Priority Calculation
+
+| Source | Default Priority | Config Key |
+|---|---|---|
+| Manual (`/contemplate` or source includes "manual") | 100 | `priority.manual` |
+| Correction (source includes "correction") | 200 | `priority.correction` |
+| Entropy-based (automatic) | `defaultPriority + entropy × entropyMultiplier` | `priority.entropyMultiplier` |
+| Default | 0 | `priority.defaultPriority` |
+
+Explicit priority passed via `addInquiry()` or the gateway method overrides auto-calculation. Equal-priority inquiries use FIFO ordering (earliest scheduled first).
+
+### Priority Configuration
+
+| Setting | Default | What It Does |
+|---|---|---|
+| `priority.manual` | `100` | Priority for manually added inquiries |
+| `priority.correction` | `200` | Priority for correction-sourced inquiries |
+| `priority.entropyMultiplier` | `10` | Multiplier for entropy-based priority |
+| `priority.defaultPriority` | `0` | Base priority for automatic inquiries |
+
+## Gateway Methods (New)
+
+### `contemplation.addInquiry`
+
+Add an inquiry directly to the queue (used by `/contemplate` skill and external integrations).
+
+```json
+{
+  "method": "contemplation.addInquiry",
+  "params": {
+    "agentId": "main",
+    "question": "Why does X happen when Y?",
+    "source": "manual",
+    "tags": ["manual"],
+    "priority": 100
+  }
+}
+```
+
+Returns `{ status: "queued", inquiryId: "inq_...", priority: 100 }` or `{ error: "blocked_by_filter", category: "..." }`.
+
+## Cron Integration
+
+The following crons complement the contemplation pipeline:
+
+| Cron | Schedule | Purpose |
+|---|---|---|
+| `metacog-monday-review` | Mon 09:30 CET | Reviews crystallization candidates + weekly blocked log |
+| `metacog-weekly-growth-check` | Fri 18:00 CET | Checks if growth vectors were created this week |
+| `metacog-monthly-calibration` | 1st Mon/month 10:00 CET | Calibration reminder for filter/priority config |
+| `metacog-weekly-pattern-scan` | Sun 03:30 CET | Scans session history, adds top patterns as inquiries |
+
 ## License
 
 MIT
