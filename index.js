@@ -187,6 +187,15 @@ module.exports = {
 
         if (updated?.status === 'completed') {
           await persistCompletedInsights(state);
+          // New growth vector created → trigger crystallization
+          if (global.__ocNightshift?.queueTask) {
+            global.__ocNightshift.queueTask(ctx.agentId, {
+              type: 'crystallization',
+              priority: 25,
+              source: 'contemplation-completion'
+            });
+            api.logger.info(`[Contemplation:${ctx.agentId}] Queued crystallization task after completing inquiry`);
+          }
         }
 
         // Queue another nightshift task in case more passes are due
