@@ -86,7 +86,7 @@ async function tagInquiry(store, inquiry, config, logger) {
  */
 function resolveOutputPaths(agentId, workspacePath) {
   const workspace = workspacePath
-    || path.join(os.homedir(), '.openclaw', agentId === 'main' ? 'workspace' : `workspace-${agentId}`);
+    || path.join(os.homedir(), '.openclaw', 'workspace');
   return {
     growthVectorsPath: path.join(workspace, 'memory', 'growth-vectors.json'),
     insightsPath: path.join(workspace, 'memory', 'insights')
