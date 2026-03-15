@@ -220,6 +220,13 @@ module.exports = {
     // the LLM has already reasoned about the exchange.
 
     if (global.__ocMetabolism?.gapListeners) {
+      // Guard against duplicate subscriptions (plugins/gateway dual-registration)
+      if (!global.__ocMetabolism._contemplationSubscribed) {
+        global.__ocMetabolism._contemplationSubscribed = true;
+      } else {
+        api.logger.info('[Contemplation] Already subscribed to metabolism gaps — skipping duplicate');
+        return;
+      }
       global.__ocMetabolism.gapListeners.push(async (gaps, agentId) => {
         const state = getState(agentId);
         for (const gap of gaps) {
