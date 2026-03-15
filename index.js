@@ -223,11 +223,7 @@ module.exports = {
       // Guard against duplicate subscriptions (plugins/gateway dual-registration)
       if (!global.__ocMetabolism._contemplationSubscribed) {
         global.__ocMetabolism._contemplationSubscribed = true;
-      } else {
-        api.logger.info('[Contemplation] Already subscribed to metabolism gaps — skipping duplicate');
-        return;
-      }
-      global.__ocMetabolism.gapListeners.push(async (gaps, agentId) => {
+        global.__ocMetabolism.gapListeners.push(async (gaps, agentId) => {
         const state = getState(agentId);
         for (const gap of gaps) {
           // Filter check before adding to queue
@@ -252,7 +248,10 @@ module.exports = {
           tagInquiry(state.store, inquiry, config, api.logger).catch(() => {});
         }
       });
-      api.logger.info('[Contemplation] Subscribed to metabolism gap events via global bus');
+        api.logger.info('[Contemplation] Subscribed to metabolism gap events via global bus');
+      } else {
+        api.logger.info('[Contemplation] Already subscribed to metabolism gaps — skipping duplicate');
+      }
     }
 
     // Nightshift task runner — also uses global since api.nightshift is scoped
