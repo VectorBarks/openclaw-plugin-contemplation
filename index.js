@@ -284,12 +284,17 @@ module.exports = {
       );
       
       if (due.length > 0 && global.__ocNightshift?.queueTask) {
-        api.logger.info(`[Contemplation:${agentId}] Found ${due.length} due inquiries on startup — queueing 1 to avoid flood`);
-        // Only queue 1 on startup to avoid gateway overload. Nightshift will pick up the rest naturally.
+        // Check if any due inquiry has high priority (≥ 100) → immediate processing
+        const highPrioDue = due.filter(i => (i.priority || 0) >= 100);
+        const hasHighPrio = highPrioDue.length > 0;
+        const maxPrio = hasHighPrio ? Math.max(...highPrioDue.map(i => i.priority || 0)) : 0;
+
+        api.logger.info(`[Contemplation:${agentId}] Found ${due.length} due inquiries on startup (${highPrioDue.length} high-prio) — queueing`);
         global.__ocNightshift.queueTask(agentId, {
           type: 'contemplation',
-          priority: config.nightshift?.priority || 50,
-          source: 'contemplation-restart'
+          priority: hasHighPrio ? Math.max(maxPrio, 100) : config.nightshift?.priority || 50,
+          source: hasHighPrio ? 'immediate-restart' : 'contemplation-restart',
+          forceRun: hasHighPrio
         });
       }
     }
@@ -455,16 +460,21 @@ module.exports = {
       // Tag asynchronously
       tagInquiry(state.store, inquiry, config, api.logger).catch(() => {});
 
-      // Queue for nightshift
+      // Queue for nightshift — high-priority inquiries (≥ 100) get immediate processing
+      const inquiryPriority = inquiry.priority || 0;
       if (global.__ocNightshift?.queueTask) {
+        const nightshiftPriority = inquiryPriority >= 100
+          ? Math.max(inquiryPriority, 100)
+          : config.nightshift?.priority || 50;
         global.__ocNightshift.queueTask(agentId, {
           type: 'contemplation',
-          priority: config.nightshift?.priority || 50,
-          source: 'manual'
+          priority: nightshiftPriority,
+          source: inquiryPriority >= 100 ? 'immediate' : 'manual',
+          forceRun: inquiryPriority >= 100
         });
       }
 
-      respond(true, { status: 'queued', inquiryId: inquiry.id, priority: inquiry.priority });
+      respond(true, { status: inquiryPriority >= 100 ? 'queued_immediate' : 'queued', inquiryId: inquiry.id, priority: inquiry.priority });
     });
 
     api.registerGatewayMethod('contemplation.requeue', async ({ params, respond }) => {
