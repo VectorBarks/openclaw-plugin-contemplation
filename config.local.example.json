@@ -1,0 +1,9 @@
+{
+  "_comment": "Private overrides for contemplation plugin. Copy to config.local.json and customize.",
+  "llm": {
+    "model": "your-model-name"
+  },
+  "output": {
+    "targetDir": "/path/to/output"
+  }
+}
