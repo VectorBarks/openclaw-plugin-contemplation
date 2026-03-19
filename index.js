@@ -169,8 +169,11 @@ module.exports = {
 
     async function runOneDuePass(state, ctx, task) {
       if (state.processing) return false;
-      // Check if this is a forced run (manual trigger via /nightshift-run)
-      const forceRun = task?.source === 'manual';
+      // Check if this is a forced run (manual trigger, immediate high-prio, or restart recovery)
+      const forceRun = task?.forceRun === true
+        || task?.source === 'manual'
+        || task?.source === 'immediate'
+        || task?.source === 'immediate-restart';
       const due = state.store.getDuePass(Date.now(), forceRun);
       if (!due) return false;
 
@@ -199,11 +202,15 @@ module.exports = {
         }
 
         // Queue another nightshift task in case more passes are due
+        // Preserve high priority from the completed inquiry for next pass
         if (global.__ocNightshift?.queueTask) {
+          const inquiryPrio = due.inquiry.priority || 0;
+          const isHighPrio = inquiryPrio >= 100;
           global.__ocNightshift.queueTask(ctx.agentId, {
             type: 'contemplation',
-            priority: config.nightshift?.priority || 50,
-            source: 'contemplation'
+            priority: isHighPrio ? Math.max(inquiryPrio, 100) : config.nightshift?.priority || 50,
+            source: isHighPrio ? 'immediate' : 'contemplation',
+            forceRun: isHighPrio
           });
         }
 
@@ -460,9 +467,65 @@ module.exports = {
       // Tag asynchronously
       tagInquiry(state.store, inquiry, config, api.logger).catch(() => {});
 
-      // Queue for nightshift — high-priority inquiries (≥ 100) get immediate processing
+      // High-priority inquiries (≥ 100): attempt direct execution bypassing nightshift queue
       const inquiryPriority = inquiry.priority || 0;
-      if (global.__ocNightshift?.queueTask) {
+      if (inquiryPriority >= 100 && !state.processing) {
+        // Direct execution — bypass nightshift queue entirely for high-prio tasks
+        api.logger.info(`[Contemplation:${agentId}] High-prio inquiry ${inquiry.id} (prio ${inquiryPriority}) — direct execution`);
+        state.processing = true;
+        setImmediate(async () => {
+          try {
+            const mockCtx = { agentId, sessionKey: `agent:${agentId}` };
+            const due = state.store.getDuePass(Date.now(), true);
+            if (due) {
+              const output = await reflect.runPass({
+                inquiry: due.inquiry,
+                passNumber: due.passNumber,
+                config
+              });
+              const updated = state.store.completePass(due.inquiry.id, due.passNumber, output);
+              api.logger.info(`[Contemplation:${agentId}] Direct pass ${due.passNumber} completed for ${due.inquiry.id}`);
+
+              if (updated?.status === 'completed') {
+                await persistCompletedInsights(state);
+                if (global.__ocNightshift?.queueTask) {
+                  global.__ocNightshift.queueTask(agentId, {
+                    type: 'crystallization',
+                    priority: 25,
+                    source: 'contemplation-completion'
+                  });
+                }
+              }
+
+              // Re-queue for next pass if more due (preserving high priority)
+              const nextDue = state.store.getDuePass(Date.now(), true);
+              if (nextDue && global.__ocNightshift?.queueTask) {
+                global.__ocNightshift.queueTask(agentId, {
+                  type: 'contemplation',
+                  priority: Math.max(nextDue.inquiry.priority || 0, 100),
+                  source: 'immediate',
+                  forceRun: true
+                });
+              }
+            }
+          } catch (err) {
+            api.logger.error(`[Contemplation:${agentId}] Direct execution failed: ${err.message}`);
+            // Fall back to nightshift queue
+            if (global.__ocNightshift?.queueTask) {
+              global.__ocNightshift.queueTask(agentId, {
+                type: 'contemplation',
+                priority: Math.max(inquiryPriority, 100),
+                source: 'immediate',
+                forceRun: true
+              });
+            }
+          } finally {
+            state.processing = false;
+          }
+        });
+        respond(true, { status: 'direct_execution', inquiryId: inquiry.id, priority: inquiry.priority });
+      } else if (global.__ocNightshift?.queueTask) {
+        // Normal priority or already processing — queue via nightshift
         const nightshiftPriority = inquiryPriority >= 100
           ? Math.max(inquiryPriority, 100)
           : config.nightshift?.priority || 50;
@@ -472,9 +535,10 @@ module.exports = {
           source: inquiryPriority >= 100 ? 'immediate' : 'manual',
           forceRun: inquiryPriority >= 100
         });
+        respond(true, { status: inquiryPriority >= 100 ? 'queued_immediate' : 'queued', inquiryId: inquiry.id, priority: inquiry.priority });
+      } else {
+        respond(true, { status: 'queued', inquiryId: inquiry.id, priority: inquiry.priority });
       }
-
-      respond(true, { status: inquiryPriority >= 100 ? 'queued_immediate' : 'queued', inquiryId: inquiry.id, priority: inquiry.priority });
     });
 
     api.registerGatewayMethod('contemplation.requeue', async ({ params, respond }) => {
