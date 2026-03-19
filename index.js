@@ -497,15 +497,51 @@ module.exports = {
                 }
               }
 
-              // Re-queue for next pass if more due (preserving high priority)
+              // Re-queue for next pass — if high priority, recurse directly via setImmediate
               const nextDue = state.store.getDuePass(Date.now(), true);
-              if (nextDue && global.__ocNightshift?.queueTask) {
-                global.__ocNightshift.queueTask(agentId, {
-                  type: 'contemplation',
-                  priority: Math.max(nextDue.inquiry.priority || 0, 100),
-                  source: 'immediate',
-                  forceRun: true
-                });
+              if (nextDue) {
+                const nextPrio = nextDue.inquiry.priority || 0;
+                if (nextPrio >= 100) {
+                  // Continue direct execution chain — bypass nightshift for next pass too
+                  setImmediate(async () => {
+                    try {
+                      state.processing = true;
+                      const stillDue = state.store.getDuePass(Date.now(), true);
+                      if (stillDue) {
+                        const nextOutput = await reflect.runPass({
+                          inquiry: stillDue.inquiry,
+                          passNumber: stillDue.passNumber,
+                          config
+                        });
+                        const nextUpdated = state.store.completePass(stillDue.inquiry.id, stillDue.passNumber, nextOutput);
+                        api.logger.info(`[Contemplation:${agentId}] Direct pass ${stillDue.passNumber} completed for ${stillDue.inquiry.id}`);
+                        if (nextUpdated?.status === 'completed') {
+                          await persistCompletedInsights(state);
+                        }
+                        // Check for yet another pass
+                        const afterNext = state.store.getDuePass(Date.now(), true);
+                        if (afterNext && (afterNext.inquiry.priority || 0) >= 100 && global.__ocNightshift?.queueTask) {
+                          global.__ocNightshift.queueTask(agentId, {
+                            type: 'contemplation',
+                            priority: afterNext.inquiry.priority || 100,
+                            source: 'immediate',
+                            forceRun: true
+                          });
+                        }
+                      }
+                    } catch (e) {
+                      api.logger.error(`[Contemplation:${agentId}] Direct pass chain failed: ${e.message}`);
+                    } finally {
+                      state.processing = false;
+                    }
+                  });
+                } else if (global.__ocNightshift?.queueTask) {
+                  global.__ocNightshift.queueTask(agentId, {
+                    type: 'contemplation',
+                    priority: nextPrio,
+                    source: 'contemplation-requeue'
+                  });
+                }
               }
             }
           } catch (err) {
